@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
 	"github.com/Azure/moby-packaging/pkg/archive"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -35,6 +36,7 @@ type ArtifactInfo struct {
 
 type Messages struct {
 	Messages []*azqueue.DequeuedMessage
+	memo     sets.Set[archive.Spec]
 }
 
 type Client struct {
@@ -55,6 +57,8 @@ func (c *Client) GetAllMessages(ctx context.Context) (*Messages, error) {
 			NumberOfMessages:  &max,
 			VisibilityTimeout: &twoMinutesInSeconds,
 		}
+
+		ret Messages
 	)
 
 	// Temporarily dequeue all the messages to ensure we don't enqueue a duplicate
