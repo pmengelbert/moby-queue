@@ -93,6 +93,13 @@ func (m *Messages) memoize() error {
 	if len(m.Messages) == 0 {
 		return nil
 	}
+
+	if m.memo != nil {
+		return nil
+	}
+
+	m.memo = sets.New[archive.Spec]()
+
 	var errs error
 
 	for i := range m.Messages {
@@ -134,6 +141,10 @@ func (m *Messages) ContainsBuild(spec archive.Spec) (bool, error) {
 	failures := 0
 	if len(m.Messages) == 0 {
 		return false, nil
+	}
+
+	if err := m.memoize(); err != nil {
+		return false, err
 	}
 
 	for _, rawMessage := range m.Messages {
