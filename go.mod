@@ -1,11 +1,12 @@
 module github.com/pmengelbert/moby-queue
 
-go 1.21.0
+go 1.21
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.3.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue v1.0.0
 	github.com/Azure/moby-packaging v0.0.0-20230821194743-d18b7ad989be
+	k8s.io/apimachinery v0.28.0
 )
 
 require (
@@ -28,5 +29,4 @@ require (
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
 	golang.org/x/text v0.12.0 // indirect
-	k8s.io/apimachinery v0.28.0 // indirect
 )

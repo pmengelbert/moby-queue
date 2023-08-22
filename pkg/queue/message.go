@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue"
@@ -17,6 +18,8 @@ import (
 const (
 	defaultAccountName = "moby"
 	defaultQueueName   = "moby-packaging-signing-and-publishing"
+
+	maxErrors = 4
 )
 
 var (
@@ -45,8 +48,6 @@ type Client struct {
 
 func (c *Client) GetAllMessages(ctx context.Context) (*Messages, error) {
 	var (
-		allMessages = []*azqueue.DequeuedMessage{}
-
 		max           int32 = 32 // maximum number of messages for request
 		failures      int   = 0
 		totalFailures int   = 0
@@ -58,7 +59,7 @@ func (c *Client) GetAllMessages(ctx context.Context) (*Messages, error) {
 			VisibilityTimeout: &twoMinutesInSeconds,
 		}
 
-		ret Messages
+		ret = new(Messages)
 	)
 
 	// Temporarily dequeue all the messages to ensure we don't enqueue a duplicate
@@ -76,19 +77,67 @@ func (c *Client) GetAllMessages(ctx context.Context) (*Messages, error) {
 			continue
 		}
 
-		allMessages = append(allMessages, m.Messages...)
+		ret.Messages = append(ret.Messages, m.Messages...)
 		errs = nil
 		failures = 0
 	}
 
-	return &Messages{Messages: allMessages}, allErrs
+	if err := ret.memoize(); err != nil {
+		allErrs = errors.Join(allErrs, err)
+	}
+
+	return ret, allErrs
+}
+
+func (m *Messages) memoize() error {
+	if len(m.Messages) == 0 {
+		return nil
+	}
+	var errs error
+
+	for i := range m.Messages {
+		if m.Messages[i].MessageText == nil {
+			errs = errors.Join(errs, fmt.Errorf("nil message %#v", m.Messages[i]))
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(*m.Messages[i].MessageText)
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		var spec archive.Spec
+		if err := json.Unmarshal(b, &spec); err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		m.memo.Insert(spec)
+	}
+
+	if m.memo.Len() == 0 {
+		return fmt.Errorf("failed processing specs in queue message: %w", errs)
+	}
+
+	if errs != nil {
+		s := strings.Split(errs.Error(), "\n")
+		for _, err := range s {
+			fmt.Fprintf(os.Stderr, "##vso[task.logissue type=error;]error memoizing queue messages: %s\n", err)
+		}
+	}
+
+	return nil
 }
 
 // used by trigger
 func (m *Messages) ContainsBuild(spec archive.Spec) (bool, error) {
 	failures := 0
+	if len(m.Messages) == 0 {
+		return false, nil
+	}
+
 	for _, rawMessage := range m.Messages {
-		if failures > 4 {
+		if failures > maxErrors {
 			return false, fmt.Errorf("too many failures inspecting builds")
 		}
 
